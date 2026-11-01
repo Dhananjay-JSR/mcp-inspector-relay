@@ -17,17 +17,20 @@ code: you point it at a relay URL.
 
 ## Usage
 
-Deploy the relay, then in MCP Inspector choose **SSE** and enter:
+The public instance runs at `https://mcp-relay.dhananjaay.dev`. In MCP
+Inspector choose **SSE** and enter:
 
 ```text
-https://<relay-host>/sse?url=https%3A%2F%2Fmcp.example.com%2Fsse
+https://mcp-relay.dhananjaay.dev/sse?url=https%3A%2F%2Fmcp.example.com%2Fsse
 ```
 
 The `url` value must be URL-encoded:
 
 ```js
-const relayUrl = `https://<relay-host>/sse?url=${encodeURIComponent("https://mcp.example.com/sse")}`;
+const relayUrl = `https://mcp-relay.dhananjaay.dev/sse?url=${encodeURIComponent("https://mcp.example.com/sse")}`;
 ```
+
+Self-hosting? Replace the host with your own deployment.
 
 The relay rewrites the MCP `endpoint` event so tool calls flow back through the
 relay automatically.
