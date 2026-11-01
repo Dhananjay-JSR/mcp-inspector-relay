@@ -6,6 +6,27 @@ import { parseUpstreamUrl, UpstreamError } from "./url-policy";
 const MAX_BODY_BYTES = 1_048_576;
 const USER_AGENT = "mcp-inspector-relay/0.1";
 
+/**
+ * Request headers the relay forwards upstream. Everything else is dropped so a
+ * browser cannot smuggle host, cookie, or proxy headers through the relay.
+ * Authorization carries the user's bearer token; the relay never logs it.
+ */
+const FORWARDED_REQUEST_HEADERS = [
+  "authorization",
+  "accept",
+  "content-type",
+  "last-event-id",
+  "mcp-session-id",
+  "mcp-protocol-version",
+] as const;
+
+const FORWARDED_RESPONSE_HEADERS = [
+  "content-type",
+  "cache-control",
+  "mcp-session-id",
+  "mcp-protocol-version",
+] as const;
+
 function jsonResponse(status: number, body: unknown, headers: Headers): Response {
   const out = new Headers(headers);
   out.set("Content-Type", "application/json; charset=utf-8");
@@ -118,6 +139,60 @@ async function proxyMessage(
   return new Response(response.body, { status: response.status, headers: out });
 }
 
+/**
+ * Proxies a Streamable HTTP endpoint. Unlike legacy SSE there is no endpoint
+ * event to rewrite: the client keeps using the same relay URL for POST, GET,
+ * and DELETE, and the relay forwards each request to the upstream `url`.
+ */
+async function proxyStreamableHttp(
+  request: Request,
+  env: Env,
+  relayUrl: URL,
+  headers: Headers,
+): Promise<Response> {
+  const upstream = parseUpstreamUrl(relayUrl.searchParams.get("url"), env);
+
+  let body: ArrayBuffer | undefined;
+  if (request.method === "POST") {
+    const declaredLength = Number(request.headers.get("content-length") ?? "0");
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+      throw new UpstreamError("Request body too large", 413);
+    }
+
+    body = await request.arrayBuffer();
+    if (body.byteLength > MAX_BODY_BYTES) {
+      throw new UpstreamError("Request body too large", 413);
+    }
+  }
+
+  const upstreamHeaders = new Headers({ "User-Agent": USER_AGENT });
+  for (const name of FORWARDED_REQUEST_HEADERS) {
+    copyHeader(request, upstreamHeaders, name);
+  }
+  if (request.method === "POST" && !upstreamHeaders.has("accept")) {
+    upstreamHeaders.set("Accept", "application/json, text/event-stream");
+  }
+
+  const response = await fetch(upstream, {
+    method: request.method,
+    headers: upstreamHeaders,
+    body,
+    redirect: "manual",
+  });
+
+  if (response.status >= 300 && response.status < 400) {
+    throw new UpstreamError("Upstream redirected; redirects are not allowed", 502);
+  }
+
+  const out = new Headers(headers);
+  for (const name of FORWARDED_RESPONSE_HEADERS) {
+    const value = response.headers.get(name);
+    if (value) out.set(name, value);
+  }
+
+  return new Response(response.body, { status: response.status, headers: out });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const relayUrl = new URL(request.url);
@@ -147,6 +222,7 @@ export default {
             endpoints: {
               sse: "/sse?url=<encoded upstream SSE URL>",
               message: "/message?url=<encoded upstream message URL>",
+              streamableHttp: "/mcp?url=<encoded upstream Streamable HTTP URL>",
               health: "/healthz",
             },
           },
@@ -162,6 +238,13 @@ export default {
       if (relayUrl.pathname === "/message") {
         if (request.method !== "POST") return methodNotAllowed("POST, OPTIONS", headers);
         return await proxyMessage(request, env, relayUrl, headers);
+      }
+
+      if (relayUrl.pathname === "/mcp") {
+        if (!["GET", "POST", "DELETE"].includes(request.method)) {
+          return methodNotAllowed("GET, POST, DELETE, OPTIONS", headers);
+        }
+        return await proxyStreamableHttp(request, env, relayUrl, headers);
       }
 
       return jsonResponse(404, { error: "Not found" }, headers);

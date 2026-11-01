@@ -18,6 +18,7 @@ describe("cors", () => {
   it("emits the MCP CORS headers for an allowed origin", () => {
     const headers = corsHeaders("https://vscode.dev");
     expect(headers.get("Access-Control-Allow-Origin")).toBe("https://vscode.dev");
+    expect(headers.get("Access-Control-Allow-Methods")).toBe("GET, POST, DELETE, OPTIONS");
     expect(headers.get("Access-Control-Allow-Headers")).toContain("Mcp-Session-Id");
     expect(headers.get("Access-Control-Expose-Headers")).toContain("Mcp-Session-Id");
     expect(headers.get("Vary")).toBe("Origin");

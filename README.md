@@ -30,10 +30,26 @@ The `url` value must be URL-encoded:
 const relayUrl = `https://mcp-relay.dhananjaay.dev/sse?url=${encodeURIComponent("https://mcp.example.com/sse")}`;
 ```
 
+For a **Streamable HTTP** server, choose that transport and use `/mcp`:
+
+```text
+https://mcp-relay.dhananjaay.dev/mcp?url=https%3A%2F%2Fmcp.example.com%2Fmcp
+```
+
+The same relay URL handles the `POST`, `GET`, and `DELETE` requests that the
+Streamable HTTP transport uses, and session headers (`Mcp-Session-Id`,
+`Mcp-Protocol-Version`) are passed through in both directions.
+
 Self-hosting? Replace the host with your own deployment.
 
 The relay rewrites the MCP `endpoint` event so tool calls flow back through the
 relay automatically.
+
+### Bearer tokens
+
+Send `Authorization: Bearer <token>` with the request. The relay forwards it
+upstream on every request, so a protected server works without exposing the
+token to the page. It is never logged or stored.
 
 ## Endpoints
 
@@ -41,10 +57,11 @@ relay automatically.
 | --- | --- |
 | `GET /sse?url=` | Proxies the upstream SSE stream and rewrites the endpoint event |
 | `POST /message?url=` | Proxies client JSON-RPC messages to the upstream message URL |
+| `GET/POST/DELETE /mcp?url=` | Proxies a Streamable HTTP session |
 | `GET /healthz` | Health check |
 | `GET /` | Service metadata |
 
-Only the legacy SSE transport is supported. Streamable HTTP is not handled yet.
+Both the legacy SSE transport and Streamable HTTP are supported.
 
 ## Security model
 
@@ -57,6 +74,8 @@ Only the legacy SSE transport is supported. Streamable HTTP is not handled yet.
 - `Origin` allowlist defaults to `vscode.dev`, `github.dev`, and localhost dev.
 - Request bodies are capped at 1 MiB. Redirects are never followed.
 - Forwards `Authorization` and MCP headers but never stores or logs them.
+- Logs only generic error messages: no request or response bodies, headers, URLs
+  with secrets, or tokens.
 
 This is an open proxy for allowed upstreams. If you deploy it publicly, add a
 Cloudflare rate-limit/WAF rule and consider setting `ALLOWED_UPSTREAM_HOSTS`.
