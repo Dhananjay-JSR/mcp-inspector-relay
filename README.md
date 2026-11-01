@@ -59,6 +59,7 @@ token to the page. It is never logged or stored.
 | `POST /message?url=` | Proxies client JSON-RPC messages to the upstream message URL |
 | `GET/POST/DELETE /mcp?url=` | Proxies a Streamable HTTP session |
 | `GET/POST /auth?url=` | Proxies an OAuth discovery, registration, or token endpoint |
+| `GET /oauth/callback?target=` | Receives the authorization redirect and forwards it to VS Code |
 | `GET /healthz` | Health check |
 | `GET /` | Service metadata |
 
@@ -83,6 +84,17 @@ The relay forwards `Accept`, `Content-Type`, and `Authorization`, drops cookies
 and MCP headers, and never follows redirects. Because it sits in the token
 exchange, it can see the authorization code and the token response; it does not
 log either.
+
+`/oauth/callback` gives the authorization server a stable HTTPS redirect URI
+when it rejects the editor's ephemeral callback URL:
+
+```text
+https://mcp-relay.dhananjaay.dev/oauth/callback?target=<encoded VS Code URI>
+```
+
+The relay appends the returned `code`/`state` to `target` and redirects. The
+target must be a VS Code origin or the inspector's `vscode://` URI, so the relay
+cannot be used as an open redirect.
 
 ## Security model
 

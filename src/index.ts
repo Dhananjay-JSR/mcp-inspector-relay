@@ -1,4 +1,4 @@
-import { corsHeaders, isOriginAllowed } from "./cors";
+import { corsHeaders, isAllowedRedirectTarget, isOriginAllowed } from "./cors";
 import type { Env } from "./env";
 import { createEndpointRewriter } from "./sse";
 import { parseUpstreamUrl, UpstreamError } from "./url-policy";
@@ -147,6 +147,31 @@ async function proxyMessage(
 }
 
 /**
+ * Receives the authorization redirect at a stable HTTPS URL and forwards the
+ * code/state to the VS Code URI handler. This avoids authorization servers
+ * that reject the editor's ephemeral callback URL.
+ */
+function oauthCallbackResponse(relayUrl: URL, env: Env, headers: Headers): Response {
+  const target = relayUrl.searchParams.get("target");
+  if (!target || !isAllowedRedirectTarget(target, env)) {
+    return jsonResponse(400, { error: "Redirect target not allowed" }, headers);
+  }
+
+  const url = new URL(target);
+  for (const name of ["code", "state", "error", "error_description"]) {
+    const value = relayUrl.searchParams.get(name);
+    if (value !== null) {
+      url.searchParams.set(name, value);
+    }
+  }
+
+  const out = new Headers(headers);
+  out.set("Location", url.toString());
+  out.set("Cache-Control", "no-store");
+  return new Response(null, { status: 302, headers: out });
+}
+
+/**
  * Proxies an OAuth endpoint (protected-resource metadata, authorization-server
  * metadata, dynamic registration, or the token exchange). Some authorization
  * servers send correct CORS headers on preflight but omit them from the real
@@ -290,11 +315,19 @@ export default {
               message: "/message?url=<encoded upstream message URL>",
               streamableHttp: "/mcp?url=<encoded upstream Streamable HTTP URL>",
               oauth: "/auth?url=<encoded OAuth endpoint URL>",
+              oauthCallback: "/oauth/callback?target=<encoded VS Code URI>",
               health: "/healthz",
             },
           },
           headers,
         );
+      }
+
+      if (relayUrl.pathname === "/oauth/callback") {
+        if (request.method !== "GET") {
+          return methodNotAllowed("GET, OPTIONS", headers);
+        }
+        return oauthCallbackResponse(relayUrl, env, headers);
       }
 
       if (relayUrl.pathname === "/auth") {

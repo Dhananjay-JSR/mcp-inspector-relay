@@ -43,6 +43,26 @@ export function isOriginAllowed(origin: string, env: Env): boolean {
   return env.ALLOW_LOCAL_ORIGINS === "true" && VSCODE_LOCAL_ORIGIN.test(origin);
 }
 
+/**
+ * The OAuth callback redirects back to a VS Code URI handler. Only allow
+ * targets that VS Code itself serves, so the relay cannot be used as an open
+ * redirect.
+ */
+export function isAllowedRedirectTarget(raw: string, env: Env): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+
+  if (url.protocol === "vscode:" || url.protocol === "vscode-insiders:") {
+    return url.hostname.toLowerCase() === "dhananjaysenday.mcp--inspector";
+  }
+
+  return isOriginAllowed(url.origin, env);
+}
+
 export function corsHeaders(origin: string | null): Headers {
   const headers = new Headers();
   if (!origin) return headers;

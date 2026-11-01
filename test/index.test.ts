@@ -70,7 +70,7 @@ describe("relay worker", () => {
 
   it("proxies an OAuth registration POST with CORS and strips MCP headers", async () => {
     const fetchMock = vi.fn(
-      async () =>
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
         new Response(JSON.stringify({ client_id: "client-123" }), {
           status: 201,
           headers: { "content-type": "application/json" },
@@ -156,6 +156,44 @@ describe("relay worker", () => {
 
     expect(response.status).toBe(502);
     expect(response.headers.get("Access-Control-Allow-Origin")).toBe("https://vscode.dev");
+  });
+
+  it("redirects the OAuth callback to an allowed VS Code target", async () => {
+    const request = new Request(
+      "https://relay.example/oauth/callback?target=https%3A%2F%2Fvscode.dev%2Fredirect%3Fx%3D1&code=abc&state=s",
+      { headers: { Origin: "https://vscode.dev" } },
+    );
+
+    const response = await relay.fetch(request, env);
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe(
+      "https://vscode.dev/redirect?x=1&code=abc&state=s",
+    );
+  });
+
+  it("rejects an OAuth callback to an unallowed target", async () => {
+    const request = new Request(
+      "https://relay.example/oauth/callback?target=https%3A%2F%2Fevil.example%2Fcb&code=abc",
+      { headers: { Origin: "https://vscode.dev" } },
+    );
+
+    const response = await relay.fetch(request, env);
+
+    expect(response.status).toBe(400);
+  });
+
+  it("allows the inspector's vscode URI as a callback target", async () => {
+    const target = "vscode://DhananjaySenday.mcp--inspector/mcp-oauth-callback";
+    const request = new Request(
+      `https://relay.example/oauth/callback?target=${encodeURIComponent(target)}&code=abc&state=s`,
+      { headers: { Origin: "https://vscode.dev" } },
+    );
+
+    const response = await relay.fetch(request, env);
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe(`${target}?code=abc&state=s`);
   });
 
   it("answers health checks", async () => {
