@@ -45,7 +45,29 @@ describe("parseUpstreamUrl", () => {
     }
   });
 
-  it("rejects private IPv6 hosts", () => {
+  it("rejects reserved IPv4 ranges", () => {
+    for (const host of ["192.0.0.1", "192.88.99.1", "240.0.0.1", "255.255.255.255"]) {
+      expect(() => parseUpstreamUrl(`https://${host}/sse`)).toThrow(UpstreamError);
+    }
+  });
+
+  it("rejects special IPv6 ranges", () => {
+    for (const host of [
+      "[::]",
+      "[::ffff:127.0.0.1]",
+      "[64:ff9b::a00:1]",
+      "[2001:0:4136::1]",
+      "[2002:7f00:1::]",
+      "[fc00::1]",
+      "[fe80::1]",
+      "[ff02::1]",
+      "[2001:db8::1]",
+    ]) {
+      expect(() => parseUpstreamUrl(`https://${host}/sse`)).toThrow(UpstreamError);
+    }
+  });
+
+  it("rejects private IPv4 hosts", () => {
     for (const host of ["[::1]", "[fc00::1]", "[fe80::1]", "[::ffff:127.0.0.1]"]) {
       expect(() => parseUpstreamUrl(`https://${host}/sse`)).toThrow(UpstreamError);
     }

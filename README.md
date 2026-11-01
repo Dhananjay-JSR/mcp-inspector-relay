@@ -118,9 +118,40 @@ URI, so the relay cannot be used as an open redirect.
   bodies, headers, or tokens.
 - Logs only generic error messages: no request or response bodies, headers, URLs
   with secrets, or tokens.
+- Rate limits are enforced with the Workers rate limiting binding, keyed by
+  client IP and browser origin: 60 requests per minute for OAuth endpoints and
+  600 per minute for the transport. Limits are approximate and counted per
+  Cloudflare location.
+- The OAuth callback answers with `Referrer-Policy: no-referrer`, so the browser
+  never sends the authorization code to VS Code (or anyone else) in a
+  `Referer` header.
+- The callback target must be a VS Code origin or the inspector's `vscode://`
+  authority; the relay cannot be used as an open redirect.
 
-This is an open proxy for allowed upstreams. If you deploy it publicly, add a
-Cloudflare rate-limit/WAF rule and consider setting `ALLOWED_UPSTREAM_HOSTS`.
+### SSRF and DNS
+
+Upstream hostnames are validated before the relay calls `fetch`: HTTPS only,
+port 443, no credentials, and no private, loopback, link-local, CGNAT,
+documentation, multicast, 6to4, Teredo, NAT64 or cloud metadata addresses. The
+check runs on the URL host, not on a DNS answer, so a public hostname that
+resolves to a private address is only stopped by the platform: Cloudflare
+Workers cannot reach private network destinations. For a stricter deployment,
+set `ALLOWED_UPSTREAM_HOSTS` to the exact hosts you intend to serve.
+
+| Area | Protection |
+| --- | --- |
+| Upstream URL | HTTPS and port 443 only |
+| SSRF | Private/reserved host and IP validation; optional host allowlist |
+| Redirects | `redirect: "manual"`, any 3xx becomes `502` |
+| Callback target | VS Code origin / `vscode://` authority allowlist |
+| OAuth state | 128-bit secure random, validated by the extension |
+| PKCE | `S256`; verifier stored by the extension |
+| Tokens | Never stored, cached, or logged by the relay |
+| Headers | Explicit request/response allowlists; cookies dropped |
+| Rate limiting | Workers binding, per IP + origin, separate OAuth and transport limits |
+
+This is an open proxy for allowed upstreams. If you deploy it publicly, keep the
+rate limits enabled and consider setting `ALLOWED_UPSTREAM_HOSTS`.
 
 ## Configuration
 
@@ -130,6 +161,8 @@ Cloudflare rate-limit/WAF rule and consider setting `ALLOWED_UPSTREAM_HOSTS`.
 | `ALLOW_LOCAL_ORIGINS` | unset | `true` allows the `vscode-test-web` `*.localhost` subdomains |
 | `ALLOWED_UPSTREAM_HOSTS` | unset (all public hosts) | Upstream host allowlist |
 | `ALLOW_INSECURE_UPSTREAM` | unset | `true` allows `http://localhost` during development |
+| `AUTH_RATE_LIMITER` | binding, 60/min | OAuth discovery, registration, token, callback |
+| `API_RATE_LIMITER` | binding, 600/min | MCP transport endpoints |
 
 ## Development
 

@@ -47,6 +47,43 @@ function methodNotAllowed(allow: string, headers: Headers): Response {
   return jsonResponse(405, { error: "Method not allowed" }, out);
 }
 
+/**
+ * Cloudflare's rate limiting bindings are approximate and per-location, but
+ * they stop one client from using the relay as a bulk proxy. The key combines
+ * the client IP with the browser origin so separate sessions get separate
+ * budgets, and OAuth endpoints get a tighter limit than the transport.
+ */
+function rateLimitKey(request: Request, bucket: "auth" | "api"): string {
+  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
+  const origin = request.headers.get("Origin") ?? "direct";
+  return `${bucket}|${ip}|${origin}`;
+}
+
+async function enforceRateLimit(
+  request: Request,
+  env: Env,
+  path: string,
+): Promise<Response | null> {
+  const authPath =
+    path === "/auth" ||
+    path === OAUTH_CALLBACK_PATH ||
+    path.startsWith(`${OAUTH_CALLBACK_PATH}/`);
+  const bucket = authPath ? "auth" : "api";
+  const limiter = bucket === "auth" ? env.AUTH_RATE_LIMITER : env.API_RATE_LIMITER;
+  if (!limiter) {
+    return null;
+  }
+
+  const { success } = await limiter.limit({ key: rateLimitKey(request, bucket) });
+  if (success) {
+    return null;
+  }
+
+  const headers = corsHeaders(request.headers.get("Origin"));
+  headers.set("Retry-After", bucket === "auth" ? "60" : "10");
+  return jsonResponse(429, { error: "Rate limit exceeded" }, headers);
+}
+
 function copyHeader(from: Request, to: Headers, name: string): void {
   const value = from.headers.get(name);
   if (value) to.set(name, value);
@@ -192,6 +229,9 @@ function oauthCallbackResponse(relayUrl: URL, env: Env, headers: Headers): Respo
   const out = new Headers(headers);
   out.set("Location", url.toString());
   out.set("Cache-Control", "no-store");
+  // The callback URL carries the authorization code. Do not let the browser
+  // send it to VS Code (or anyone else) in a Referer header.
+  out.set("Referrer-Policy", "no-referrer");
   return new Response(null, { status: 302, headers: out });
 }
 
@@ -326,6 +366,11 @@ export default {
     try {
       if (relayUrl.pathname === "/healthz" && request.method === "GET") {
         return jsonResponse(200, { ok: true }, headers);
+      }
+
+      const limited = await enforceRateLimit(request, env, relayUrl.pathname);
+      if (limited) {
+        return limited;
       }
 
       if (relayUrl.pathname === "/" && request.method === "GET") {

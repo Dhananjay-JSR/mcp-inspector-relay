@@ -223,6 +223,70 @@ describe("relay worker", () => {
     expect(response.headers.get("Location")).toBe(`${target}?code=abc&state=s`);
   });
 
+  it("rate limits OAuth endpoints with a Retry-After header", async () => {
+    const keys: string[] = [];
+    const limiter = {
+      limit: async ({ key }: { key: string }) => {
+        keys.push(key);
+        return { success: false };
+      },
+    };
+
+    const request = new Request(
+      "https://relay.example/auth?url=https%3A%2F%2Fauth.example.com%2Foauth2%2Ftoken",
+      {
+        method: "POST",
+        headers: {
+          Origin: "https://vscode.dev",
+          "CF-Connecting-IP": "203.0.113.9",
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "grant_type=authorization_code&code=abc",
+      },
+    );
+
+    const response = await relay.fetch(request, { ...env, AUTH_RATE_LIMITER: limiter });
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("60");
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe("https://vscode.dev");
+    expect(keys[0]).toBe("auth|203.0.113.9|https://vscode.dev");
+  });
+
+  it("uses the API limiter for transport and skips health checks", async () => {
+    const calls: string[] = [];
+    const limiter = {
+      limit: async ({ key }: { key: string }) => {
+        calls.push(key);
+        return { success: true };
+      },
+    };
+
+    const health = await relay.fetch(new Request("https://relay.example/healthz"), {
+      ...env,
+      AUTH_RATE_LIMITER: limiter,
+      API_RATE_LIMITER: limiter,
+    });
+    expect(health.status).toBe(200);
+    expect(calls).toHaveLength(0);
+
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200 })));
+    const transport = await relay.fetch(
+      new Request("https://relay.example/mcp?url=https%3A%2F%2Fmcp.example.com%2Fmcp", {
+        method: "POST",
+        headers: {
+          Origin: "https://vscode.dev",
+          "CF-Connecting-IP": "203.0.113.9",
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      }),
+      { ...env, API_RATE_LIMITER: limiter },
+    );
+    expect(transport.status).toBe(200);
+    expect(calls[0]).toBe("api|203.0.113.9|https://vscode.dev");
+  });
+
   it("answers health checks", async () => {
     const response = await relay.fetch(new Request("https://relay.example/healthz"), env);
     expect(response.status).toBe(200);

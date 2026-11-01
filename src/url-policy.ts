@@ -43,7 +43,8 @@ function isPrivateIPv4(host: string): boolean {
     (a === 169 && b === 254) ||
     (a === 172 && b >= 16 && b <= 31) ||
     (a === 192 && b === 168) ||
-    (a === 192 && b === 0 && c === 2) ||
+    (a === 192 && b === 0 && (c === 0 || c === 2)) ||
+    (a === 192 && b === 88 && c === 99) ||
     (a === 198 && (b === 18 || b === 19)) ||
     (a === 198 && b === 51 && c === 100) ||
     (a === 203 && b === 0 && c === 113) ||
@@ -53,11 +54,18 @@ function isPrivateIPv4(host: string): boolean {
 
 function isPrivateIPv6(host: string): boolean {
   const h = host.replace(/^\[|\]$/g, "").toLowerCase();
-  if (h === "::" || h === "::1") return true;
-  if (h.startsWith("::ffff:")) return true;
-  if (h.startsWith("fc") || h.startsWith("fd")) return true;
-  if (/^fe[89ab]/.test(h)) return true;
-  if (h.startsWith("2001:db8")) return true;
+  // Unspecified, loopback, IPv4-compatible and IPv4-mapped embeds.
+  if (h.startsWith("::")) return true;
+  if (h.startsWith("64:ff9b:")) return true; // NAT64
+  if (h.startsWith("100:")) return true; // discard-only 100::/64
+  if (h.startsWith("2001:0:")) return true; // Teredo 2001::/32
+  if (/^2001:1[0-9a-f]:/.test(h)) return true; // ORCHID 2001:10::/28
+  if (h.startsWith("2001:2:")) return true; // benchmarking 2001:2::/48
+  if (h.startsWith("2001:db8:")) return true; // documentation
+  if (h.startsWith("2002:")) return true; // 6to4
+  if (h.startsWith("fc") || h.startsWith("fd")) return true; // ULA fc00::/7
+  if (/^fe[89ab]/.test(h)) return true; // link-local fe80::/10
+  if (h.startsWith("ff")) return true; // multicast ff00::/8
   return false;
 }
 
