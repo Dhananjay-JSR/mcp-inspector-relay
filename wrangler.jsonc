@@ -15,6 +15,7 @@
     }
   ],
   "vars": {
-    "ALLOWED_ORIGINS": "https://vscode.dev,https://insiders.vscode.dev,https://github.dev,https://insiders.github.dev,http://localhost:3000,http://127.0.0.1:3000"
+    "ALLOWED_ORIGINS": "https://vscode.dev,https://insiders.vscode.dev,https://github.dev,https://insiders.github.dev,http://localhost:3000,http://127.0.0.1:3000",
+    "ALLOW_LOCAL_ORIGINS": "true"
   }
 }

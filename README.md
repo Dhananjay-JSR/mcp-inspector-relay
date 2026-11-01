@@ -71,7 +71,10 @@ Both the legacy SSE transport and Streamable HTTP are supported.
   hostnames and IP literals.
 - Rejects credentials in upstream URLs and non-443 ports.
 - Optional `ALLOWED_UPSTREAM_HOSTS` allowlist, supporting `*.suffix` entries.
-- `Origin` allowlist defaults to `vscode.dev`, `github.dev`, and localhost dev.
+- `Origin` allowlist defaults to `vscode.dev`, `github.dev`, and localhost dev,
+  plus the per-session `*.vscode-cdn.net` origin VS Code for the Web actually
+  uses. The `vscode-test-web` localhost subdomains are allowed only when
+  `ALLOW_LOCAL_ORIGINS=true`.
 - Request bodies are capped at 1 MiB. Redirects are never followed.
 - Forwards `Authorization` and MCP headers but never stores or logs them.
 - Logs only generic error messages: no request or response bodies, headers, URLs
@@ -85,6 +88,7 @@ Cloudflare rate-limit/WAF rule and consider setting `ALLOWED_UPSTREAM_HOSTS`.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `ALLOWED_ORIGINS` | vscode.dev, github.dev, localhost | Browser origins allowed to call the relay |
+| `ALLOW_LOCAL_ORIGINS` | unset | `true` allows the `vscode-test-web` `*.localhost` subdomains |
 | `ALLOWED_UPSTREAM_HOSTS` | unset (all public hosts) | Upstream host allowlist |
 | `ALLOW_INSECURE_UPSTREAM` | unset | `true` allows `http://localhost` during development |
 
@@ -103,6 +107,7 @@ server and allow insecure upstreams in `.dev.vars`:
 
 ```dotenv
 ALLOW_INSECURE_UPSTREAM=true
+ALLOW_LOCAL_ORIGINS=true
 ALLOWED_ORIGINS=https://vscode.dev,http://localhost:3000
 ```
 

@@ -16,8 +16,31 @@ export function getAllowedOrigins(env: Env): string[] {
   return configured?.length ? configured : DEFAULT_ALLOWED_ORIGINS;
 }
 
+/**
+ * VS Code for the Web serves every editor instance from an ephemeral
+ * subdomain such as https://abc123-xyz.vscode-cdn.net. The web extension host
+ * and its webviews make their requests from that origin, not from the bare
+ * https://vscode.dev origin, so exact matching alone rejects every real
+ * vscode.dev session.
+ */
+const VSCODE_CDN_ORIGIN = /^https:\/\/[a-z0-9-]+\.vscode-cdn\.net$/;
+
+/**
+ * `vscode-test-web` runs the web extension host on a subdomain of localhost,
+ * for example http://v--abc123.localhost:3000. That is a different origin from
+ * http://localhost:3000, so it needs its own pattern. It is gated behind
+ * ALLOW_LOCAL_ORIGINS so a public deployment only accepts editor origins.
+ */
+const VSCODE_LOCAL_ORIGIN = /^http:\/\/v--[a-z0-9-]+\.localhost:\d+$/;
+
 export function isOriginAllowed(origin: string, env: Env): boolean {
-  return getAllowedOrigins(env).includes(origin);
+  if (getAllowedOrigins(env).includes(origin)) {
+    return true;
+  }
+  if (VSCODE_CDN_ORIGIN.test(origin)) {
+    return true;
+  }
+  return env.ALLOW_LOCAL_ORIGINS === "true" && VSCODE_LOCAL_ORIGIN.test(origin);
 }
 
 export function corsHeaders(origin: string | null): Headers {

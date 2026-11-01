@@ -8,6 +8,31 @@ describe("cors", () => {
     expect(isOriginAllowed("https://evil.example", {})).toBe(false);
   });
 
+  it("allows the ephemeral vscode-cdn origin used by VS Code for the Web", () => {
+    expect(isOriginAllowed("https://dhananjaay-gsmpk.vscode-cdn.net", {})).toBe(true);
+    expect(isOriginAllowed("https://abc123.vscode-cdn.net", {})).toBe(true);
+    // Still a closed pattern: exact hosts only, no lookalikes.
+    expect(isOriginAllowed("https://vscode-cdn.net", {})).toBe(false);
+    expect(isOriginAllowed("https://abc.vscode-cdn.net.evil.example", {})).toBe(false);
+    expect(isOriginAllowed("http://abc.vscode-cdn.net", {})).toBe(false);
+    expect(isOriginAllowed("https://abc.vscode-cdn.net:8443", {})).toBe(false);
+  });
+
+  it("gates vscode-test-web localhost subdomains behind ALLOW_LOCAL_ORIGINS", () => {
+    const origin =
+      "http://v--1on1tlku1l82k04sa244ng64fq8ph7hucgciav84f2tqdkvkrdb9.localhost:3000";
+    expect(isOriginAllowed(origin, {})).toBe(false);
+    expect(isOriginAllowed(origin, { ALLOW_LOCAL_ORIGINS: "true" })).toBe(true);
+    expect(
+      isOriginAllowed("http://v--abc.localhost.evil.example:3000", {
+        ALLOW_LOCAL_ORIGINS: "true",
+      }),
+    ).toBe(false);
+    expect(
+      isOriginAllowed("https://v--abc.localhost:3000", { ALLOW_LOCAL_ORIGINS: "true" }),
+    ).toBe(false);
+  });
+
   it("uses a configured origin list when provided", () => {
     const env = { ALLOWED_ORIGINS: "https://example.com, https://other.example" };
     expect(getAllowedOrigins(env)).toEqual(["https://example.com", "https://other.example"]);
