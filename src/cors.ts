@@ -26,7 +26,7 @@ export function corsHeaders(origin: string | null): Headers {
 
   headers.set("Access-Control-Allow-Origin", origin);
   headers.set("Vary", "Origin");
-  headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  headers.set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   headers.set(
     "Access-Control-Allow-Headers",
     "Content-Type, Authorization, Last-Event-ID, Mcp-Session-Id, Mcp-Protocol-Version",
