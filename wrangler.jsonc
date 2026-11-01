@@ -6,6 +6,8 @@
   "observability": {
     "enabled": true
   },
+  "workers_dev": false,
+  "preview_urls": false,
   "routes": [
     {
       "pattern": "mcp-relay.dhananjaay.dev",
