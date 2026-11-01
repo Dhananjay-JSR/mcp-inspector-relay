@@ -172,6 +172,33 @@ describe("relay worker", () => {
     );
   });
 
+  it("redirects a path-encoded OAuth callback target", async () => {
+    const target = "https://vscode.dev/redirect?vscode-reqid=2&vscode-path=%2Fmcp-oauth-callback";
+    const token = Buffer.from(target, "utf8").toString("base64url");
+    const request = new Request(
+      `https://relay.example/oauth/callback/${token}?code=abc&state=s`,
+      { headers: { Origin: "https://vscode.dev" } },
+    );
+
+    const response = await relay.fetch(request, env);
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe(
+      "https://vscode.dev/redirect?vscode-reqid=2&vscode-path=%2Fmcp-oauth-callback&code=abc&state=s",
+    );
+  });
+
+  it("rejects a path-encoded OAuth callback to an unallowed target", async () => {
+    const token = Buffer.from("https://evil.example/cb", "utf8").toString("base64url");
+    const request = new Request(`https://relay.example/oauth/callback/${token}?code=abc`, {
+      headers: { Origin: "https://vscode.dev" },
+    });
+
+    const response = await relay.fetch(request, env);
+
+    expect(response.status).toBe(400);
+  });
+
   it("rejects an OAuth callback to an unallowed target", async () => {
     const request = new Request(
       "https://relay.example/oauth/callback?target=https%3A%2F%2Fevil.example%2Fcb&code=abc",

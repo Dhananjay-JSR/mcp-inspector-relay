@@ -59,7 +59,7 @@ token to the page. It is never logged or stored.
 | `POST /message?url=` | Proxies client JSON-RPC messages to the upstream message URL |
 | `GET/POST/DELETE /mcp?url=` | Proxies a Streamable HTTP session |
 | `GET/POST /auth?url=` | Proxies an OAuth discovery, registration, or token endpoint |
-| `GET /oauth/callback?target=` | Receives the authorization redirect and forwards it to VS Code |
+| `GET /oauth/callback/<target>` | Receives the authorization redirect and forwards it to VS Code |
 | `GET /healthz` | Health check |
 | `GET /` | Service metadata |
 
@@ -89,12 +89,16 @@ log either.
 when it rejects the editor's ephemeral callback URL:
 
 ```text
-https://mcp-relay.dhananjaay.dev/oauth/callback?target=<encoded VS Code URI>
+https://mcp-relay.dhananjaay.dev/oauth/callback/<base64url VS Code URI>
 ```
 
-The relay appends the returned `code`/`state` to `target` and redirects. The
-target must be a VS Code origin or the inspector's `vscode://` URI, so the relay
-cannot be used as an open redirect.
+The target is base64url-encoded in the path instead of a query parameter. Some
+authorization servers reject a redirect URI whose query contains another
+URL, and a nested query has to be double-encoded to survive the round trip.
+
+The relay appends the returned `code`/`state` to the decoded target and
+redirects. The target must be a VS Code origin or the inspector's `vscode://`
+URI, so the relay cannot be used as an open redirect.
 
 ## Security model
 

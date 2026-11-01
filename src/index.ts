@@ -151,8 +151,32 @@ async function proxyMessage(
  * code/state to the VS Code URI handler. This avoids authorization servers
  * that reject the editor's ephemeral callback URL.
  */
+const OAUTH_CALLBACK_PATH = "/oauth/callback";
+
+/**
+ * The target travels in the callback path as base64url. Encoding it as a query
+ * parameter produces nested, double-encoded URLs, and some authorization
+ * servers reject those when they complete the flow.
+ */
+function decodeCallbackTarget(token: string): string | null {
+  try {
+    const base64 = token.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
 function oauthCallbackResponse(relayUrl: URL, env: Env, headers: Headers): Response {
-  const target = relayUrl.searchParams.get("target");
+  const pathToken = relayUrl.pathname.startsWith(`${OAUTH_CALLBACK_PATH}/`)
+    ? relayUrl.pathname.slice(OAUTH_CALLBACK_PATH.length + 1)
+    : "";
+  const target = pathToken
+    ? decodeCallbackTarget(pathToken)
+    : relayUrl.searchParams.get("target");
   if (!target || !isAllowedRedirectTarget(target, env)) {
     return jsonResponse(400, { error: "Redirect target not allowed" }, headers);
   }
@@ -315,7 +339,7 @@ export default {
               message: "/message?url=<encoded upstream message URL>",
               streamableHttp: "/mcp?url=<encoded upstream Streamable HTTP URL>",
               oauth: "/auth?url=<encoded OAuth endpoint URL>",
-              oauthCallback: "/oauth/callback?target=<encoded VS Code URI>",
+              oauthCallback: "/oauth/callback/<base64url VS Code URI>",
               health: "/healthz",
             },
           },
@@ -323,7 +347,10 @@ export default {
         );
       }
 
-      if (relayUrl.pathname === "/oauth/callback") {
+      if (
+        relayUrl.pathname === OAUTH_CALLBACK_PATH ||
+        relayUrl.pathname.startsWith(`${OAUTH_CALLBACK_PATH}/`)
+      ) {
         if (request.method !== "GET") {
           return methodNotAllowed("GET, OPTIONS", headers);
         }
