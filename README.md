@@ -74,6 +74,8 @@ Both the legacy SSE transport and Streamable HTTP are supported.
 - `Origin` allowlist defaults to `vscode.dev`, `github.dev`, and localhost dev.
 - Request bodies are capped at 1 MiB. Redirects are never followed.
 - Forwards `Authorization` and MCP headers but never stores or logs them.
+- Logs only generic error messages: no request or response bodies, headers, URLs
+  with secrets, or tokens.
 
 This is an open proxy for allowed upstreams. If you deploy it publicly, add a
 Cloudflare rate-limit/WAF rule and consider setting `ALLOWED_UPSTREAM_HOSTS`.
