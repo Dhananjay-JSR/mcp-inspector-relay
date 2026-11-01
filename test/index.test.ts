@@ -68,6 +68,96 @@ describe("relay worker", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it("proxies an OAuth registration POST with CORS and strips MCP headers", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ client_id: "client-123" }), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const request = new Request(
+      "https://relay.example/auth?url=https%3A%2F%2Fauth.example.com%2Foauth2%2Fregister",
+      {
+        method: "POST",
+        headers: {
+          Origin: "https://vscode.dev",
+          "Content-Type": "application/json",
+          "Mcp-Protocol-Version": "2025-06-18",
+          Cookie: "session=should-not-be-forwarded",
+        },
+        body: '{"client_name":"MCP Inspector"}',
+      },
+    );
+
+    const response = await relay.fetch(request, env);
+
+    expect(response.status).toBe(201);
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe("https://vscode.dev");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.json()).toEqual({ client_id: "client-123" });
+
+    const [, init] = fetchMock.mock.calls[0];
+    const forwarded = new Headers(init?.headers);
+    expect(forwarded.get("content-type")).toBe("application/json");
+    expect(forwarded.get("mcp-protocol-version")).toBeNull();
+    expect(forwarded.get("cookie")).toBeNull();
+    expect(init?.redirect).toBe("manual");
+  });
+
+  it("proxies OAuth discovery GET with CORS", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ issuer: "https://auth.example.com" }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+      ),
+    );
+
+    const request = new Request(
+      "https://relay.example/auth?url=https%3A%2F%2Fauth.example.com%2F.well-known%2Foauth-authorization-server",
+      { headers: { Origin: "https://vscode.dev" } },
+    );
+
+    const response = await relay.fetch(request, env);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe("https://vscode.dev");
+    expect(await response.json()).toEqual({ issuer: "https://auth.example.com" });
+  });
+
+  it("does not follow redirects on OAuth endpoints", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(null, {
+            status: 302,
+            headers: { location: "https://evil.example" },
+          }),
+      ),
+    );
+
+    const request = new Request(
+      "https://relay.example/auth?url=https%3A%2F%2Fauth.example.com%2Foauth2%2Ftoken",
+      {
+        method: "POST",
+        headers: { Origin: "https://vscode.dev", "Content-Type": "application/x-www-form-urlencoded" },
+        body: "grant_type=authorization_code&code=abc",
+      },
+    );
+
+    const response = await relay.fetch(request, env);
+
+    expect(response.status).toBe(502);
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe("https://vscode.dev");
+  });
+
   it("answers health checks", async () => {
     const response = await relay.fetch(new Request("https://relay.example/healthz"), env);
     expect(response.status).toBe(200);

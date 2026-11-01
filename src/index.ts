@@ -27,6 +27,13 @@ const FORWARDED_RESPONSE_HEADERS = [
   "mcp-protocol-version",
 ] as const;
 
+/**
+ * OAuth requests need only these headers. MCP-specific headers are dropped so a
+ * discovery or token request cannot fail on an authorization server that does
+ * not allow them.
+ */
+const FORWARDED_AUTH_REQUEST_HEADERS = ["accept", "authorization", "content-type"] as const;
+
 function jsonResponse(status: number, body: unknown, headers: Headers): Response {
   const out = new Headers(headers);
   out.set("Content-Type", "application/json; charset=utf-8");
@@ -140,6 +147,65 @@ async function proxyMessage(
 }
 
 /**
+ * Proxies an OAuth endpoint (protected-resource metadata, authorization-server
+ * metadata, dynamic registration, or the token exchange). Some authorization
+ * servers send correct CORS headers on preflight but omit them from the real
+ * response, which makes the browser discard it. Relaying the request gives the
+ * browser a response the relay owns, so it can always attach CORS headers.
+ *
+ * The relay sees the authorization code and token response while proxying, so
+ * this endpoint is only used when the user opts into the relay.
+ */
+async function proxyAuth(
+  request: Request,
+  env: Env,
+  relayUrl: URL,
+  headers: Headers,
+): Promise<Response> {
+  const upstream = parseUpstreamUrl(relayUrl.searchParams.get("url"), env);
+
+  let body: ArrayBuffer | undefined;
+  if (request.method === "POST") {
+    const declaredLength = Number(request.headers.get("content-length") ?? "0");
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+      throw new UpstreamError("Request body too large", 413);
+    }
+
+    body = await request.arrayBuffer();
+    if (body.byteLength > MAX_BODY_BYTES) {
+      throw new UpstreamError("Request body too large", 413);
+    }
+  }
+
+  const upstreamHeaders = new Headers({ "User-Agent": USER_AGENT });
+  for (const name of FORWARDED_AUTH_REQUEST_HEADERS) {
+    const value = request.headers.get(name);
+    if (value) upstreamHeaders.set(name, value);
+  }
+  if (!upstreamHeaders.has("accept")) {
+    upstreamHeaders.set("Accept", "application/json");
+  }
+
+  const response = await fetch(upstream, {
+    method: request.method,
+    headers: upstreamHeaders,
+    body,
+    redirect: "manual",
+  });
+
+  if (response.status >= 300 && response.status < 400) {
+    throw new UpstreamError("Upstream redirected; redirects are not allowed", 502);
+  }
+
+  const out = new Headers(headers);
+  const contentType = response.headers.get("content-type");
+  if (contentType) out.set("Content-Type", contentType);
+  out.set("Cache-Control", "no-store");
+
+  return new Response(response.body, { status: response.status, headers: out });
+}
+
+/**
  * Proxies a Streamable HTTP endpoint. Unlike legacy SSE there is no endpoint
  * event to rewrite: the client keeps using the same relay URL for POST, GET,
  * and DELETE, and the relay forwards each request to the upstream `url`.
@@ -223,11 +289,19 @@ export default {
               sse: "/sse?url=<encoded upstream SSE URL>",
               message: "/message?url=<encoded upstream message URL>",
               streamableHttp: "/mcp?url=<encoded upstream Streamable HTTP URL>",
+              oauth: "/auth?url=<encoded OAuth endpoint URL>",
               health: "/healthz",
             },
           },
           headers,
         );
+      }
+
+      if (relayUrl.pathname === "/auth") {
+        if (!["GET", "POST"].includes(request.method)) {
+          return methodNotAllowed("GET, POST, OPTIONS", headers);
+        }
+        return await proxyAuth(request, env, relayUrl, headers);
       }
 
       if (relayUrl.pathname === "/sse") {

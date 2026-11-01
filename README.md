@@ -58,10 +58,31 @@ token to the page. It is never logged or stored.
 | `GET /sse?url=` | Proxies the upstream SSE stream and rewrites the endpoint event |
 | `POST /message?url=` | Proxies client JSON-RPC messages to the upstream message URL |
 | `GET/POST/DELETE /mcp?url=` | Proxies a Streamable HTTP session |
+| `GET/POST /auth?url=` | Proxies an OAuth discovery, registration, or token endpoint |
 | `GET /healthz` | Health check |
 | `GET /` | Service metadata |
 
 Both the legacy SSE transport and Streamable HTTP are supported.
+
+## OAuth endpoints
+
+Some authorization servers send the correct CORS headers on the preflight
+request but omit them from the real response. The browser then discards the
+response, so discovery, dynamic client registration, or the token exchange fail
+even though the server looks CORS-enabled.
+
+`/auth?url=` proxies those requests so the browser always receives a response
+with CORS headers. The extension uses it only when the user connects through the
+relay:
+
+```text
+https://mcp-relay.dhananjaay.dev/auth?url=https%3A%2F%2Fmcp-auth.example.com%2Foauth2%2Ftoken
+```
+
+The relay forwards `Accept`, `Content-Type`, and `Authorization`, drops cookies
+and MCP headers, and never follows redirects. Because it sits in the token
+exchange, it can see the authorization code and the token response; it does not
+log either.
 
 ## Security model
 
@@ -77,6 +98,8 @@ Both the legacy SSE transport and Streamable HTTP are supported.
   `ALLOW_LOCAL_ORIGINS=true`.
 - Request bodies are capped at 1 MiB. Redirects are never followed.
 - Forwards `Authorization` and MCP headers but never stores or logs them.
+- `/auth` sees OAuth codes and token responses while proxying; it does not log
+  bodies, headers, or tokens.
 - Logs only generic error messages: no request or response bodies, headers, URLs
   with secrets, or tokens.
 
