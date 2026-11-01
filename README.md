@@ -91,16 +91,26 @@ Then use `http://localhost:8787/sse?url=http%3A%2F%2Flocalhost%3A3001%2Fsse`.
 
 ## Deployment
 
-Deployment requires a Cloudflare account:
+The relay is deployed at `https://mcp-relay.dhananjaay.dev` (a Cloudflare custom
+domain).
+
+Pushes to `main` deploy automatically after CI passes, provided these repository
+secrets are set:
+
+- `CLOUDFLARE_API_TOKEN` — an API token with **Edit Cloudflare Workers** scoped to
+  this account
+- `CLOUDFLARE_ACCOUNT_ID`
+
+Create the token under **Cloudflare dashboard → Account API tokens → Create
+Token → Edit Cloudflare Workers**, scoped to the account that owns the Worker.
+The workflow also supports manual runs from the Actions tab.
+
+Local deploys:
 
 ```bash
 npx wrangler login
 npm run deploy
 ```
-
-For CI, add `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as repository
-secrets and run the **Deploy** workflow. It is manual-only so a release is always
-deliberate.
 
 ## License
 
