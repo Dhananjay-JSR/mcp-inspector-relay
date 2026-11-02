@@ -11,4 +11,8 @@ export interface Env {
   AUTH_RATE_LIMITER?: RateLimit;
   /** Per-client limit for the MCP transport endpoints. */
   API_RATE_LIMITER?: RateLimit;
+  /** Repository that stores PR previews. Defaults to the inspector repo. */
+  PREVIEW_REPO?: string;
+  /** Branch that stores PR previews. Defaults to gh-pages. */
+  PREVIEW_BRANCH?: string;
 }

@@ -1,6 +1,7 @@
 import { corsHeaders, isAllowedRedirectTarget, isOriginAllowed } from "./cors";
 import type { Env } from "./env";
 import { createEndpointRewriter } from "./sse";
+import { isPreviewPath, previewHeaders, proxyPreview } from "./preview";
 import { parseUpstreamUrl, UpstreamError } from "./url-policy";
 
 const MAX_BODY_BYTES = 1_048_576;
@@ -63,6 +64,7 @@ async function enforceRateLimit(
   request: Request,
   env: Env,
   path: string,
+  headers: Headers,
 ): Promise<Response | null> {
   const authPath =
     path === "/auth" ||
@@ -79,9 +81,9 @@ async function enforceRateLimit(
     return null;
   }
 
-  const headers = corsHeaders(request.headers.get("Origin"));
-  headers.set("Retry-After", bucket === "auth" ? "60" : "10");
-  return jsonResponse(429, { error: "Rate limit exceeded" }, headers);
+  const out = new Headers(headers);
+  out.set("Retry-After", bucket === "auth" ? "60" : "10");
+  return jsonResponse(429, { error: "Rate limit exceeded" }, out);
 }
 
 function copyHeader(from: Request, to: Headers, name: string): void {
@@ -352,12 +354,13 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const relayUrl = new URL(request.url);
     const origin = request.headers.get("Origin");
+    const preview = isPreviewPath(relayUrl.pathname);
 
-    if (origin && !isOriginAllowed(origin, env)) {
+    if (origin && !preview && !isOriginAllowed(origin, env)) {
       return jsonResponse(403, { error: "Origin not allowed" }, new Headers());
     }
 
-    const headers = corsHeaders(origin);
+    const headers = preview ? previewHeaders() : corsHeaders(origin);
 
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers });
@@ -368,9 +371,16 @@ export default {
         return jsonResponse(200, { ok: true }, headers);
       }
 
-      const limited = await enforceRateLimit(request, env, relayUrl.pathname);
+      const limited = await enforceRateLimit(request, env, relayUrl.pathname, headers);
       if (limited) {
         return limited;
+      }
+
+      if (preview) {
+        if (!["GET", "HEAD"].includes(request.method)) {
+          return methodNotAllowed("GET, HEAD, OPTIONS", headers);
+        }
+        return await proxyPreview(request, env, relayUrl);
       }
 
       if (relayUrl.pathname === "/" && request.method === "GET") {
@@ -385,6 +395,7 @@ export default {
               streamableHttp: "/mcp?url=<encoded upstream Streamable HTTP URL>",
               oauth: "/auth?url=<encoded OAuth endpoint URL>",
               oauthCallback: "/oauth/callback/<base64url VS Code URI>",
+              preview: "/preview/pr-<number>/<path>",
               health: "/healthz",
             },
           },
